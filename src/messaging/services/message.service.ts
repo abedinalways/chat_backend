@@ -13,7 +13,7 @@ import {
 
 @Injectable()
 export class MessageService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async sendMessage(
     senderId: string,
@@ -216,5 +216,68 @@ export class MessageService {
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     };
+  }
+
+  /** Check if a user is a participant of a conversation */
+  async isUserInConversation(
+    userId: string,
+    conversationId: string,
+  ): Promise<boolean> {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+    });
+
+    return !!participant;
+  }
+
+  /** Get all participant IDs for a conversation */
+  async getConversationParticipantIds(
+    conversationId: string,
+  ): Promise<string[]> {
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+
+    return participants.map((p) => p.userId);
+  }
+
+  /** Create message within a transaction */
+  async createMessageWithTransaction(
+    senderId: string,
+    conversationId: string,
+    content: string,
+    type: MessageType = MessageType.TEXT,
+    receiverId?: string,
+  ): Promise<IMessage> {
+    return await this.prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: {
+          content,
+          type,
+          status: MessageStatus.SENT,
+          senderId,
+          receiverId,
+          conversationId,
+        },
+        include: {
+          sender: true,
+          receiver: true,
+        },
+      });
+
+      // Update conversation's updatedAt timestamp
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() },
+      });
+
+      return message as unknown as IMessage;
+    });
   }
 }

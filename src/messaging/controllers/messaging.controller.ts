@@ -30,7 +30,7 @@ export class MessagingController {
     private readonly messageService: MessageService,
     private readonly notificationService: NotificationService,
     private readonly messagingGateway: MessagingGateway,
-  ) {}
+  ) { }
 
   @Get('conversations')
   async getUserConversations(@User() user: JwtPayload) {
@@ -138,9 +138,10 @@ export class MessagingController {
       MessageStatus.READ,
     );
 
-    await this.messagingGateway.handleMarkAsRead({
+    await this.messagingGateway.markAsReadFromRest({
       userId: user.sub,
       messageId: messageId,
+      conversationId: message.conversationId,
     });
 
     return { success: true, data: message };

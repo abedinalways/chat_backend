@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -10,6 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -17,6 +16,7 @@ model User {
   email     String   @unique
   name      String
   avatar    String?
+  password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -35,6 +35,8 @@ model Conversation {
   // Relations
   participants ConversationParticipant[]
   messages     Message[]
+
+  @@index([updatedAt])
 }
 
 model ConversationParticipant {
@@ -48,6 +50,7 @@ model ConversationParticipant {
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
+  @@index([userId])
 }
 
 model Message {
@@ -69,6 +72,7 @@ model Message {
   @@index([conversationId])
   @@index([senderId])
   @@index([receiverId])
+  @@index([createdAt])
 }
 
 model Notification {
@@ -80,12 +84,14 @@ model Notification {
   read      Boolean          @default(false)
   data      Json?
   createdAt DateTime         @default(now())
+  updatedAt DateTime         @default(now()) @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([createdAt])
+  @@index([read])
 }
 
 enum MessageType {

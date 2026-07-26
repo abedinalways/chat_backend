@@ -34,15 +34,24 @@ npm install
 ```
 
 ### 3. Configure Environment
-
-Edit `.env` file:
-
-```env
-DATABASE_URL="postgresql://postgres:password@localhost:5432/chatdb?schema=public"
-JWT_SECRET="your-super-secret-key-change-this-in-production"
-JWT_EXPIRES_IN="7d"
-PORT=3001
-```
+ 
+ Copy `.env.example` to `.env` and update values:
+ 
+ ```bash
+ cp .env.example .env
+ ```
+ 
+ Then edit `.env` file:
+ 
+ ```env
+ DATABASE_URL="postgresql://postgres:password@localhost:5432/chat_db?schema=public"
+ JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"
+ JWT_EXPIRES_IN="7d"
+ PORT=5000
+ NODE_ENV="development"
+ ```
+ 
+ **⚠️ Important:** `JWT_SECRET` is a required environment variable. The application will throw an error on startup if it's not set.
 
 ### 4. Database Setup
 

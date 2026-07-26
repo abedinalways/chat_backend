@@ -1,23 +1,19 @@
-import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from '../services/auth.service';
+import { RegisterDto } from '../dto/register.dto';
+import { LoginDto } from '../dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('register')
-  async register(@Body() body: { email: string; name: string }) {
-    if (!body.email || !body.name) {
-      throw new BadRequestException('Email and name are required');
-    }
-    return this.authService.register(body.email, body.name);
+  async register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto.email, dto.name, dto.password);
   }
 
   @Post('login')
-  async login(@Body() body: { email: string }) {
-    if (!body.email) {
-      throw new BadRequestException('Email is required');
-    }
-    return this.authService.login(body.email);
+  async login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.email, dto.password);
   }
 }
