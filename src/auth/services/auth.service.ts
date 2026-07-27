@@ -1,6 +1,5 @@
 import {
   Injectable,
-  NotFoundException,
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,14 +12,20 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   async validateUser(email: string, password: string) {
     // Use Prisma without select to get all fields including password
     // Type assertion needed due to Prisma client generation
     const user = (await this.prisma.user.findUnique({
       where: { email },
-    })) as { id: string; email: string; name: string; avatar?: string | null; password: string } | null;
+    })) as {
+      id: string;
+      email: string;
+      name: string;
+      avatar?: string | null;
+      password: string;
+    } | null;
 
     if (!user) {
       return null;
@@ -62,16 +67,15 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Use type assertion for password field due to Prisma generation
-    const user = (await this.prisma.user.create({
-      data: { email, name, password: hashedPassword } as any,
+    const user = await this.prisma.user.create({
+      data: { email, name, password: hashedPassword },
       select: {
         id: true,
         email: true,
         name: true,
         createdAt: true,
       },
-    })) as { id: string; email: string; name: string; createdAt: Date };
+    });
 
     return user;
   }

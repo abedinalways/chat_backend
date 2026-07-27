@@ -18,6 +18,7 @@ import {
 import { MessageService } from '../services/message.service';
 import { NotificationService } from '../services/notification.service';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../../prisma/prisma.service';
 import {
   MessageType,
   MessageStatus,
@@ -25,7 +26,6 @@ import {
 } from '../interfaces/message.interface';
 import { WS_EVENTS, WS_EMIT } from '../constants/socket.constants';
 import { SendMessageDto } from '../dto/send-message.dto';
-import { JoinConversationDto } from '../dto/join-conversation.dto';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -40,11 +40,12 @@ import { plainToInstance } from 'class-transformer';
 })
 @Injectable()
 export class MessagingGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(MessagingGateway.name);
 
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   // Tracks userId → Set<socketId> to support multiple tabs/devices
   private connectedUsers = new Map<string, Set<string>>();
@@ -53,7 +54,8 @@ export class MessagingGateway
     private readonly messageService: MessageService,
     private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
-  ) { }
+    private readonly prisma: PrismaService,
+  ) {}
 
   afterInit() {
     this.logger.log('Messaging Gateway initialized on /chat namespace');
@@ -65,7 +67,9 @@ export class MessagingGateway
         client.handshake.auth.token || client.handshake.headers.authorization;
 
       if (!token) {
-        this.logger.warn(`Connection rejected — no token provided (${client.id})`);
+        this.logger.warn(
+          `Connection rejected — no token provided (${client.id})`,
+        );
         client.disconnect();
         return;
       }
@@ -97,8 +101,12 @@ export class MessagingGateway
   }
 
   async handleDisconnect(client: Socket) {
-    const userId = (client.data as Record<string, string>).userId;
-    if (userId && this.connectedUsers.has(userId)) {
+    const userId = (client.data as Record<string, string> | undefined)?.userId;
+    if (!userId) {
+      this.logger.warn(`Disconnected socket with no userId: ${client.id}`);
+      return;
+    }
+    if (this.connectedUsers.has(userId)) {
       const sockets = this.connectedUsers.get(userId)!;
       sockets.delete(client.id);
       if (sockets.size === 0) {
@@ -110,12 +118,23 @@ export class MessagingGateway
     }
   }
 
-  /** Broadcast user online/offline status */
+  /** Broadcast user online/offline status to all their conversation participants */
   private async broadcastUserOnlineStatus(userId: string, isOnline: boolean) {
-    this.server.to(`user:${userId}`).emit(WS_EMIT.USER_STATUS, {
-      userId,
-      isOnline,
-    });
+    const userConversations =
+      await this.prisma.conversationParticipant.findMany({
+        where: { userId },
+        select: { conversationId: true },
+      });
+
+    const statusPayload = { userId, isOnline };
+
+    for (const { conversationId } of userConversations) {
+      this.server
+        .to(`conversation:${conversationId}`)
+        .emit(WS_EMIT.USER_STATUS, statusPayload);
+    }
+
+    this.server.to(`user:${userId}`).emit(WS_EMIT.USER_STATUS, statusPayload);
   }
 
   /** Send an event to a specific user (all their connected sockets). */
@@ -138,7 +157,10 @@ export class MessagingGateway
   }
 
   /** Validate DTO using class-validator */
-  private async validateDto<T extends object>(dto: T, classType: new () => T): Promise<void> {
+  private async validateDto<T extends object>(
+    dto: T,
+    classType: new () => T,
+  ): Promise<void> {
     const errors = await validate(plainToInstance(classType, dto));
     if (errors.length > 0) {
       const messages = errors
@@ -182,9 +204,10 @@ export class MessagingGateway
       );
 
       // Get all participants to emit message and notification
-      const participants = await this.messageService.getConversationParticipantIds(
-        dto.conversationId,
-      );
+      const participants =
+        await this.messageService.getConversationParticipantIds(
+          dto.conversationId,
+        );
 
       this.broadcastToConversation(
         dto.conversationId,
@@ -241,7 +264,8 @@ export class MessagingGateway
       return { event: WS_EMIT.ERROR, data: { message: 'Forbidden' } };
     }
 
-    this.server
+    // Broadcast to everyone in the conversation EXCEPT the sender
+    client
       .to(`conversation:${rawDto.conversationId}`)
       .emit(WS_EMIT.TYPING_UPDATE, {
         userId,
@@ -251,7 +275,10 @@ export class MessagingGateway
 
     return {
       event: 'typing_sent',
-      data: { conversationId: rawDto.conversationId, isTyping: rawDto.isTyping },
+      data: {
+        conversationId: rawDto.conversationId,
+        isTyping: rawDto.isTyping,
+      },
     };
   }
 
@@ -280,16 +307,21 @@ export class MessagingGateway
         MessageStatus.READ,
       );
 
-      // Emit only to the conversation room
+      // Emit to everyone in the conversation EXCEPT the sender
       if (rawDto.conversationId) {
-        this.broadcastToConversation(
-          rawDto.conversationId,
-          WS_EMIT.MESSAGE_READ,
-          { messageId: rawDto.messageId, userId },
-        );
+        client
+          .to(`conversation:${rawDto.conversationId}`)
+          .emit(WS_EMIT.MESSAGE_READ, {
+            messageId: rawDto.messageId,
+            userId,
+            conversationId: rawDto.conversationId,
+          });
       }
 
-      return { event: 'mark_as_read_sent', data: { messageId: rawDto.messageId } };
+      return {
+        event: 'mark_as_read_sent',
+        data: { messageId: rawDto.messageId },
+      };
     } catch (error) {
       const err = error as Error;
       return { event: WS_EMIT.ERROR, data: { message: err.message } };
@@ -324,10 +356,23 @@ export class MessagingGateway
   }
 
   @SubscribeMessage(WS_EVENTS.LEAVE_CONVERSATION)
-  handleLeaveConversation(
+  async handleLeaveConversation(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: { conversationId: string },
   ) {
+    const userId = (client.data as Record<string, string>).userId;
+    if (!userId) {
+      return { event: WS_EMIT.ERROR, data: { message: 'Unauthorized' } };
+    }
+
+    const isParticipant = await this.messageService.isUserInConversation(
+      userId,
+      dto.conversationId,
+    );
+    if (!isParticipant) {
+      return { event: WS_EMIT.ERROR, data: { message: 'Forbidden' } };
+    }
+
     void client.leave(`conversation:${dto.conversationId}`);
     return {
       event: 'left_conversation',
@@ -354,7 +399,11 @@ export class MessagingGateway
         this.broadcastToConversation(
           data.conversationId,
           WS_EMIT.MESSAGE_READ,
-          { messageId: data.messageId, userId: data.userId },
+          {
+            messageId: data.messageId,
+            userId: data.userId,
+            conversationId: data.conversationId,
+          },
         );
       }
     } catch (error) {
