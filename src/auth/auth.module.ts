@@ -11,11 +11,11 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants';
     PassportModule,
     JwtModule.register({
       secret: JWT_SECRET,
-      signOptions: { expiresIn: JWT_EXPIRES_IN as any },
+      signOptions: { expiresIn: JWT_EXPIRES_IN as unknown as number },
     }),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
-export class AuthModule { }
+export class AuthModule {}

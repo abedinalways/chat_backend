@@ -13,7 +13,7 @@ import {
 
 @Injectable()
 export class MessageService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async sendMessage(
     senderId: string,
@@ -22,13 +22,16 @@ export class MessageService {
     type: MessageType = MessageType.TEXT,
     receiverId?: string,
   ): Promise<IMessage> {
+    const cleanReceiverId =
+      receiverId && receiverId.length > 0 ? receiverId : undefined;
+
     const message = await this.prisma.message.create({
       data: {
         content,
         type,
         status: MessageStatus.SENT,
         senderId,
-        receiverId,
+        receiverId: cleanReceiverId,
         conversationId,
       },
       include: {
@@ -37,13 +40,38 @@ export class MessageService {
       },
     });
 
-    // Update conversation's updatedAt timestamp
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: new Date() },
     });
 
-    return message as unknown as IMessage;
+    return {
+      id: message.id,
+      content: message.content,
+      senderId: message.senderId,
+      receiverId: message.receiverId,
+      conversationId: message.conversationId,
+      type: message.type as MessageType,
+      status: message.status as MessageStatus,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      sender: message.sender
+        ? {
+            id: message.sender.id,
+            email: message.sender.email,
+            name: message.sender.name,
+            avatar: message.sender.avatar,
+          }
+        : undefined,
+      receiver: message.receiver
+        ? {
+            id: message.receiver.id,
+            email: message.receiver.email,
+            name: message.receiver.name,
+            avatar: message.receiver.avatar,
+          }
+        : null,
+    };
   }
 
   async getConversationMessages(
@@ -62,7 +90,33 @@ export class MessageService {
       skip: offset,
     });
 
-    return messages as unknown as IMessage[];
+    return messages.map((message) => ({
+      id: message.id,
+      content: message.content,
+      senderId: message.senderId,
+      receiverId: message.receiverId,
+      conversationId: message.conversationId,
+      type: message.type as MessageType,
+      status: message.status as MessageStatus,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      sender: message.sender
+        ? {
+            id: message.sender.id,
+            email: message.sender.email,
+            name: message.sender.name,
+            avatar: message.sender.avatar,
+          }
+        : undefined,
+      receiver: message.receiver
+        ? {
+            id: message.receiver.id,
+            email: message.receiver.email,
+            name: message.receiver.name,
+            avatar: message.receiver.avatar,
+          }
+        : null,
+    }));
   }
 
   async getMessageById(messageId: string): Promise<IMessage> {
@@ -78,27 +132,87 @@ export class MessageService {
       throw new NotFoundException('Message not found');
     }
 
-    return message as unknown as IMessage;
+    return {
+      id: message.id,
+      content: message.content,
+      senderId: message.senderId,
+      receiverId: message.receiverId,
+      conversationId: message.conversationId,
+      type: message.type as MessageType,
+      status: message.status as MessageStatus,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      sender: message.sender
+        ? {
+            id: message.sender.id,
+            email: message.sender.email,
+            name: message.sender.name,
+            avatar: message.sender.avatar,
+          }
+        : undefined,
+      receiver: message.receiver
+        ? {
+            id: message.receiver.id,
+            email: message.receiver.email,
+            name: message.receiver.name,
+            avatar: message.receiver.avatar,
+          }
+        : null,
+    };
   }
 
   async updateMessageStatus(
     messageId: string,
     status: MessageStatus,
   ): Promise<IMessage> {
-    const message = await this.prisma.message.findUnique({
+    const existing = await this.prisma.message.findUnique({
       where: { id: messageId },
+      include: {
+        sender: true,
+        receiver: true,
+      },
     });
 
-    if (!message) {
+    if (!existing) {
       throw new NotFoundException('Message not found');
     }
 
     const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { status },
+      include: {
+        sender: true,
+        receiver: true,
+      },
     });
 
-    return updated as unknown as IMessage;
+    return {
+      id: updated.id,
+      content: updated.content,
+      senderId: updated.senderId,
+      receiverId: updated.receiverId,
+      conversationId: updated.conversationId,
+      type: updated.type as MessageType,
+      status: updated.status as MessageStatus,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+      sender: updated.sender
+        ? {
+            id: updated.sender.id,
+            email: updated.sender.email,
+            name: updated.sender.name,
+            avatar: updated.sender.avatar,
+          }
+        : undefined,
+      receiver: updated.receiver
+        ? {
+            id: updated.receiver.id,
+            email: updated.receiver.email,
+            name: updated.receiver.name,
+            avatar: updated.receiver.avatar,
+          }
+        : null,
+    };
   }
 
   async deleteMessage(messageId: string, userId: string): Promise<void> {
@@ -143,7 +257,12 @@ export class MessageService {
 
     return {
       id: conversation.id,
-      participants: conversation.participants.map((p) => p.userId),
+      participants: conversation.participants.map((p) => ({
+        id: p.user.id,
+        email: p.user.email,
+        name: p.user.name,
+        avatar: p.user.avatar,
+      })),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     };
@@ -175,10 +294,33 @@ export class MessageService {
 
     return conversations.map((conversation) => ({
       id: conversation.id,
-      participants: conversation.participants.map(
-        (p: { userId: string }) => p.userId,
-      ),
-      lastMessage: conversation.messages[0] as unknown as IMessage | undefined,
+      participants: conversation.participants.map((p) => ({
+        id: p.user.id,
+        email: p.user.email,
+        name: p.user.name,
+        avatar: p.user.avatar,
+      })),
+      lastMessage: conversation.messages[0]
+        ? {
+            id: conversation.messages[0].id,
+            content: conversation.messages[0].content,
+            senderId: conversation.messages[0].senderId,
+            receiverId: conversation.messages[0].receiverId,
+            conversationId: conversation.messages[0].conversationId,
+            type: conversation.messages[0].type as MessageType,
+            status: conversation.messages[0].status as MessageStatus,
+            createdAt: conversation.messages[0].createdAt,
+            updatedAt: conversation.messages[0].updatedAt,
+            sender: conversation.messages[0].sender
+              ? {
+                  id: conversation.messages[0].sender.id,
+                  email: conversation.messages[0].sender.email,
+                  name: conversation.messages[0].sender.name,
+                  avatar: conversation.messages[0].sender.avatar,
+                }
+              : undefined,
+          }
+        : undefined,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     }));
@@ -209,10 +351,33 @@ export class MessageService {
 
     return {
       id: conversation.id,
-      participants: conversation.participants.map(
-        (p: { userId: string }) => p.userId,
-      ),
-      lastMessage: conversation.messages[0] as unknown as IMessage | undefined,
+      participants: conversation.participants.map((p) => ({
+        id: p.user.id,
+        email: p.user.email,
+        name: p.user.name,
+        avatar: p.user.avatar,
+      })),
+      lastMessage: conversation.messages[0]
+        ? {
+            id: conversation.messages[0].id,
+            content: conversation.messages[0].content,
+            senderId: conversation.messages[0].senderId,
+            receiverId: conversation.messages[0].receiverId,
+            conversationId: conversation.messages[0].conversationId,
+            type: conversation.messages[0].type as MessageType,
+            status: conversation.messages[0].status as MessageStatus,
+            createdAt: conversation.messages[0].createdAt,
+            updatedAt: conversation.messages[0].updatedAt,
+            sender: conversation.messages[0].sender
+              ? {
+                  id: conversation.messages[0].sender.id,
+                  email: conversation.messages[0].sender.email,
+                  name: conversation.messages[0].sender.name,
+                  avatar: conversation.messages[0].sender.avatar,
+                }
+              : undefined,
+          }
+        : undefined,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     };
@@ -245,39 +410,5 @@ export class MessageService {
     });
 
     return participants.map((p) => p.userId);
-  }
-
-  /** Create message within a transaction */
-  async createMessageWithTransaction(
-    senderId: string,
-    conversationId: string,
-    content: string,
-    type: MessageType = MessageType.TEXT,
-    receiverId?: string,
-  ): Promise<IMessage> {
-    return await this.prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: {
-          content,
-          type,
-          status: MessageStatus.SENT,
-          senderId,
-          receiverId,
-          conversationId,
-        },
-        include: {
-          sender: true,
-          receiver: true,
-        },
-      });
-
-      // Update conversation's updatedAt timestamp
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { updatedAt: new Date() },
-      });
-
-      return message as unknown as IMessage;
-    });
   }
 }

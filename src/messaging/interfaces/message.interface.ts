@@ -19,6 +19,13 @@ export enum NotificationType {
   MENTION = 'MENTION',
 }
 
+export interface IUser {
+  id: string;
+  email: string;
+  name: string;
+  avatar?: string | null;
+}
+
 export interface IMessage {
   id: string;
   content: string;
@@ -29,11 +36,13 @@ export interface IMessage {
   status: MessageStatus;
   createdAt: Date;
   updatedAt: Date;
+  sender?: IUser;
+  receiver?: IUser | null;
 }
 
 export interface IConversation {
   id: string;
-  participants: string[];
+  participants: IUser[];
   lastMessage?: IMessage;
   createdAt: Date;
   updatedAt: Date;

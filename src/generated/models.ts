@@ -8,9 +8,9 @@
  *
  * 🟢 You can import this file directly.
  */
-export type * from './models/User.js'
-export type * from './models/Conversation.js'
-export type * from './models/ConversationParticipant.js'
-export type * from './models/Message.js'
-export type * from './models/Notification.js'
-export type * from './commonInputTypes.js'
+export type * from './models/User'
+export type * from './models/Conversation'
+export type * from './models/ConversationParticipant'
+export type * from './models/Message'
+export type * from './models/Notification'
+export type * from './commonInputTypes'
